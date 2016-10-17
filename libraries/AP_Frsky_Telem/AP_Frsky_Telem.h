@@ -65,7 +65,7 @@ for FrSky SPort and SPort Passthrough (OpenTX) protocols (X-receivers)
 #define VARIO_FIRST_ID              0x0110
 #define VFAS_FIRST_ID               0x0210
 #define GPS_LONG_LATI_FIRST_ID      0x0800
-#define DIY_FIRST_ID                0x5000
+#define DIY_FIRST_ID                0x1000
 
 #define START_STOP_SPORT            0x7E
 #define BYTESTUFF_SPORT             0x7D
@@ -99,15 +99,12 @@ for FrSky SPort Passthrough
 #define HOME_ALT_OFFSET             12
 #define HOME_BEARING_LIMIT          0x7F
 #define HOME_BEARING_OFFSET         25
-// for velocity and yaw data
-#define VELANDYAW_XYVEL_OFFSET      9
-#define VELANDYAW_YAW_LIMIT         0x7FF
-#define VELANDYAW_YAW_OFFSET        17
+// for velocity and rangefinder data
+#define VELANDRNG_XYVEL_OFFSET      9
 // for attitude (roll, pitch) and range data
-#define ATTIANDRNG_ROLL_LIMIT       0x7FF
-#define ATTIANDRNG_PITCH_LIMIT      0x3FF
-#define ATTIANDRNG_PITCH_OFFSET     11
-#define ATTIANDRNG_RNGFND_OFFSET    21
+#define ATTITUDE_ROLL_LIMIT       0x7FF
+#define ATTITUDE_PITCH_LIMIT      0x3FF
+#define ATTITUDE_PITCH_OFFSET     11
 
 
 
@@ -185,14 +182,14 @@ private:
     struct
     {
         uint8_t new_byte;
-        bool send_attiandrng;
+        bool send_attitude;
         bool send_latitude;
         uint32_t params_timer;
         uint32_t ap_status_timer;
         uint32_t batt_timer;
         uint32_t gps_status_timer;
         uint32_t home_timer;
-        uint32_t velandyaw_timer;
+        uint32_t velandrng_timer;
         uint32_t gps_latlng_timer;
         uint32_t vario_timer;
         uint32_t alt_timer;
@@ -247,8 +244,8 @@ private:
     uint32_t calc_batt(void);
     uint32_t calc_ap_status(void);
     uint32_t calc_home(void);
-    uint32_t calc_velandyaw(void);
-    uint32_t calc_attiandrng(void);
+    uint32_t calc_velandrng(void);
+    uint32_t calc_attitude(void);
     uint16_t prep_number(int32_t number, uint8_t digits, uint8_t power);
 
     // methods to convert flight controller data to FrSky D or SPort format

@@ -96,10 +96,10 @@ void AP_Frsky_Telem::send_SPort_Passthrough(void)
     }
 
     if ((prev_byte == START_STOP_SPORT) && (_passthrough.new_byte == SENSOR_ID_28)) { // byte 0x7E is the header of each poll request
-        if (_passthrough.send_attiandrng) { // skip other data, send attitude (roll, pitch) and range only this iteration
-            _passthrough.send_attiandrng = false; // next iteration, check if we should send something other
+        if (_passthrough.send_attitude) { // skip other data, send attitude (roll, pitch) and range only this iteration
+            _passthrough.send_attitude = false; // next iteration, check if we should send something other
         } else { // check if there's other data to send
-            _passthrough.send_attiandrng = true; // next iteration, send attitude b/c it needs frequent updates to remain smooth
+            _passthrough.send_attitude = true; // next iteration, send attitude b/c it needs frequent updates to remain smooth
             // build message queue for sensor_status_flags
             check_sensor_status_flags();
             // build message queue for ekf_status
@@ -133,9 +133,9 @@ void AP_Frsky_Telem::send_SPort_Passthrough(void)
                 send_uint32(DIY_FIRST_ID+4, calc_home());
                 _passthrough.home_timer = AP_HAL::millis();
                 return;
-            } else if ((now - _passthrough.velandyaw_timer) > 500) {
-                send_uint32(DIY_FIRST_ID+5, calc_velandyaw());
-                _passthrough.velandyaw_timer = AP_HAL::millis();
+            } else if ((now - _passthrough.velandrng_timer) > 500) {
+                send_uint32(DIY_FIRST_ID+5, calc_velandrng());
+                _passthrough.velandrng_timer = AP_HAL::millis();
                 return;
             } else if ((now - _passthrough.gps_latlng_timer) > 1000) {
                 send_uint32(GPS_LONG_LATI_FIRST_ID, calc_gps_latlng(&_passthrough.send_latitude)); // gps latitude or longitude
@@ -161,7 +161,7 @@ void AP_Frsky_Telem::send_SPort_Passthrough(void)
             }
         }
         // if nothing else needed to be sent, send attitude (roll, pitch) and range data
-        send_uint32(DIY_FIRST_ID+6, calc_attiandrng());
+        send_uint32(DIY_FIRST_ID+6, calc_attitude());
     }
 }
 
@@ -685,11 +685,11 @@ uint32_t AP_Frsky_Telem::calc_ap_status(void)
     uint32_t ap_status;
 
     // control/flight mode number (limit to 31 (0x1F) since the value is stored on 5 bits)
-    ap_status = (uint8_t)((_ap.control_mode+1) & AP_CONTROL_MODE_LIMIT);
+    ap_status = (uint8_t)(_ap.control_mode & AP_CONTROL_MODE_LIMIT);
     // simple/super simple modes flags
     ap_status |= (uint8_t)(*_ap.valuep & AP_SSIMPLE_FLAGS)<<AP_SSIMPLE_OFFSET;
-    // is_flying flag which is the inverse of the land_complete flag
-    ap_status |= (uint8_t)((*_ap.valuep & AP_LANDCOMPLETE_FLAG) ^ AP_LANDCOMPLETE_FLAG);
+    // land_complete flag
+    ap_status |= (uint8_t)(*_ap.valuep & AP_LANDCOMPLETE_FLAG);
     // armed flag
     ap_status |= (uint8_t)(AP_Notify::flags.armed)<<AP_ARMED_OFFSET;
     // battery failsafe flag
@@ -733,43 +733,38 @@ uint32_t AP_Frsky_Telem::calc_home(void)
  * prepare velocity and yaw data
  * for FrSky SPort Passthrough (OpenTX) protocol (X-receivers)
  */
-uint32_t AP_Frsky_Telem::calc_velandyaw(void)
+uint32_t AP_Frsky_Telem::calc_velandrng(void)
 {
-    uint32_t velandyaw;
+    uint32_t velandrng;
     Vector3f velNED {};
 
     // if we can't get velocity then we use zero for vertical velocity
     _ahrs.get_velocity_NED(velNED);
 
     // vertical velocity in dm/s
-    velandyaw = prep_number(roundf(velNED.z * 10), 2, 1);
-    // horizontal velocity in dm/s (use airspeed if available, otherwise use groundspeed)
-    float airspeed;
-    if (_ahrs.airspeed_estimate_true(&airspeed)) {
-        velandyaw |= prep_number(roundf(airspeed * 10), 2, 1)<<VELANDYAW_XYVEL_OFFSET;
-    } else {
-        velandyaw |= prep_number(roundf(_ahrs.groundspeed_vector().length() * 10), 2, 1)<<VELANDYAW_XYVEL_OFFSET;
-    }
-    // yaw from [0;36000] centidegrees to .2 degree increments [0;1800] (just in case, limit to 2047 (0x7FF) since the value is stored on 11 bits)
-    velandyaw |= ((uint16_t)roundf(_ahrs.yaw_sensor * 0.05f) & VELANDYAW_YAW_LIMIT)<<VELANDYAW_YAW_OFFSET;
-    return velandyaw;
+    velandrng = prep_number(roundf(velNED.z * 10), 2, 1);
+    // horizontal velocity in dm/s
+    velandrng |= prep_number(roundf(_ahrs.groundspeed_vector().length() * 10), 2, 1)<<VELANDRNG_XYVEL_OFFSET;
+   // rangefinder measurement in cm
+    velandrng |= prep_number(_rng.distance_cm(), 3, 1)<<17;
+    return velandrng;
 }
 
 /*
  * prepare attitude (roll, pitch) and range data
  * for FrSky SPort Passthrough (OpenTX) protocol (X-receivers)
  */
-uint32_t AP_Frsky_Telem::calc_attiandrng(void)
+uint32_t AP_Frsky_Telem::calc_attitude(void)
 {
-    uint32_t attiandrng;
+    uint32_t attitude;
 
     // roll from [-18000;18000] centidegrees to unsigned .2 degree increments [0;1800] (just in case, limit to 2047 (0x7FF) since the value is stored on 11 bits)
-    attiandrng = ((uint16_t)roundf((_ahrs.roll_sensor + 18000) * 0.05f) & ATTIANDRNG_ROLL_LIMIT);
+    attitude = ((uint16_t)roundf((_ahrs.roll_sensor + 18000) * 0.05f) & ATTITUDE_ROLL_LIMIT);
     // pitch from [-9000;9000] centidegrees to unsigned .2 degree increments [0;900] (just in case, limit to 1023 (0x3FF) since the value is stored on 10 bits)
-    attiandrng |= ((uint16_t)roundf((_ahrs.pitch_sensor + 9000) * 0.05f) & ATTIANDRNG_PITCH_LIMIT)<<ATTIANDRNG_PITCH_OFFSET;
-    // rangefinder measurement in cm
-    attiandrng |= prep_number(_rng.distance_cm(), 3, 1)<<ATTIANDRNG_RNGFND_OFFSET;
-    return attiandrng;
+    attitude |= ((uint16_t)roundf((_ahrs.pitch_sensor + 9000) * 0.05f) & ATTITUDE_PITCH_LIMIT)<<ATTITUDE_PITCH_OFFSET;
+    // yaw from [0;36000] centidegrees to .2 degree increments (already unsigned)
+    attitude |= ((uint16_t)roundf(_ahrs.yaw_sensor * 0.05f) & 0x7FF)<<21;
+    return attitude;
 }
 
 /*
