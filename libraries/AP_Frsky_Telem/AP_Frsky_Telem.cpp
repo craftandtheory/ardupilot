@@ -20,6 +20,8 @@
    FRSKY Telemetry library
 */
 #include "AP_Frsky_Telem.h"
+#include <GCS_MAVLink/GCS.h>
+
 extern const AP_HAL::HAL& hal;
 
 ObjectArray<mavlink_statustext_t> AP_Frsky_Telem::_statustext_queue(FRSKY_TELEM_PAYLOAD_STATUS_CAPACITY);
@@ -43,7 +45,10 @@ void AP_Frsky_Telem::init(const AP_SerialManager &serial_manager, const char *fi
         _protocol = AP_SerialManager::SerialProtocol_FrSky_SPort; // FrSky SPort protocol (X-receivers)
     } else if ((_port = serial_manager.find_serial(AP_SerialManager::SerialProtocol_FrSky_SPort_Passthrough, 0))) {
         _protocol = AP_SerialManager::SerialProtocol_FrSky_SPort_Passthrough; // FrSky SPort and SPort Passthrough (OpenTX) protocols (X-receivers)
-
+        // make frsky_telemetry available to GCS_MAVLINK (used to queue statustext messages from GCS_MAVLINK)
+        GCS_MAVLINK::register_frsky_telemetry_callback(this);
+        // add firmware and frame info to message queue
+        queue_message(MAV_SEVERITY_INFO, firmware_str);
         // save main parameters locally
         _params.mav_type = mav_type; // frame type (see MAV_TYPE in Mavlink definition file common.h)
         _params.fs_batt_voltage = fs_batt_voltage; // failsafe battery voltage in volts
@@ -60,9 +65,6 @@ void AP_Frsky_Telem::init(const AP_SerialManager &serial_manager, const char *fi
         hal.scheduler->register_io_process(FUNCTOR_BIND_MEMBER(&AP_Frsky_Telem::tick, void));
         // we don't want flow control for either protocol
         _port->set_flow_control(AP_HAL::UARTDriver::FLOW_CONTROL_DISABLE);
-
-        // add firmware and frame info to message queue
-        queue_message(MAV_SEVERITY_INFO, firmware_str);
     }
 }
 
